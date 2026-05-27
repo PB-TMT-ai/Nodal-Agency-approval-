@@ -121,18 +121,23 @@ df = st.session_state.df
 st.title("🏛️ Nodal Agency Approval Dashboard")
 st.caption("Track approval status, potential and remarks for each government nodal agency.")
 
-tab_dash, tab_add = st.tabs(["📊 Dashboard", "➕ Add / Edit Agency"])
+tab_dash, tab_add, tab_update = st.tabs(
+    ["📊 Dashboard", "➕ Add New Agency", "✏️ Update Status"]
+)
 
 # --------------------------------------------------------------------------- #
 # Dashboard
 # --------------------------------------------------------------------------- #
 with tab_dash:
-    # ---- Filters --------------------------------------------------------- #
-    with st.sidebar:
-        st.header("Filters")
+    # ---- Filters (horizontal) -------------------------------------------- #
+    fc1, fc2, fc3, fc4 = st.columns(4)
+    with fc1:
         f_status = st.multiselect("Status", filter_options(df["status"]))
+    with fc2:
         f_ministry = st.multiselect("Ministry / State", filter_options(df["ministry_state"]))
+    with fc3:
         f_potential = st.multiselect("Potential", filter_options(df["potential"]))
+    with fc4:
         f_stage = st.multiselect("Stage", filter_options(df["stage"]))
 
     view = df.copy()
@@ -282,27 +287,72 @@ with tab_add:
                 save_data(st.session_state.df)
                 st.success(f"Saved “{agency.strip()}”.")
 
-    st.divider()
-    st.subheader("Edit / delete existing entries")
-    st.caption("Edit cells directly, tick rows to delete, then click Save changes.")
 
-    edited = st.data_editor(
-        st.session_state.df,
-        width="stretch",
-        num_rows="dynamic",
-        hide_index=True,
-        column_config={
-            "annual_demand_mt": st.column_config.NumberColumn("Annual Demand (MT)", format="%d"),
-            "status": st.column_config.SelectboxColumn("Status", options=STATUS_OPTIONS),
-            "stage": st.column_config.SelectboxColumn("Stage", options=STAGE_OPTIONS),
-            "potential": st.column_config.SelectboxColumn("Potential", options=POTENTIAL_OPTIONS),
-            "priority": st.column_config.SelectboxColumn("Priority", options=PRIORITY_OPTIONS),
-        },
-        key="editor",
-    )
+# --------------------------------------------------------------------------- #
+# Update Status of an existing agency
+# --------------------------------------------------------------------------- #
+with tab_update:
+    st.subheader("Update status of an existing nodal agency")
 
-    if st.button("💾 Save changes", type="primary"):
-        st.session_state.df = _normalize(edited)
-        save_data(st.session_state.df)
-        st.success("Changes saved.")
-        st.rerun()
+    if df.empty:
+        st.info("No agencies yet. Add one in the “Add New Agency” tab first.")
+    else:
+        def _label(i):
+            r = df.loc[i]
+            ms = f" — {r['ministry_state']}" if r["ministry_state"] else ""
+            return f"{r['agency']}{ms}"
+
+        label_map = {}
+        for i in df.index:
+            lab = _label(i)
+            if lab in label_map:  # disambiguate identical agency+ministry rows
+                lab = f"{lab} [{i}]"
+            label_map[lab] = i
+
+        choice = st.selectbox("Select nodal agency", options=list(label_map.keys()))
+        idx = label_map[choice]
+        row = df.loc[idx]
+
+        def _opt_index(options, value):
+            return options.index(value) if value in options else 0
+
+        with st.form("update_agency"):
+            col_a, col_b = st.columns(2)
+            with col_a:
+                status = st.selectbox("Status", STATUS_OPTIONS,
+                                      index=_opt_index(STATUS_OPTIONS, row["status"]), key=f"u_status_{idx}")
+                stage = st.selectbox("Stage", STAGE_OPTIONS,
+                                     index=_opt_index(STAGE_OPTIONS, row["stage"]), key=f"u_stage_{idx}")
+                update_date = st.date_input("Date *", value=date.today(), key=f"u_date_{idx}")
+            with col_b:
+                potential = st.selectbox("Potential", POTENTIAL_OPTIONS,
+                                         index=_opt_index(POTENTIAL_OPTIONS, row["potential"]), key=f"u_potential_{idx}")
+                priority = st.selectbox("Priority", PRIORITY_OPTIONS,
+                                        index=_opt_index(PRIORITY_OPTIONS, row["priority"]), key=f"u_priority_{idx}")
+                cur_demand = int(row["annual_demand_mt"]) if pd.notna(row["annual_demand_mt"]) else 0
+                annual_demand = st.number_input("Annual Demand (MT)", min_value=0, step=1000,
+                                                value=cur_demand, key=f"u_demand_{idx}")
+            comment = st.text_area("Comment / Remarks", value=row["comment"],
+                                   placeholder="Latest update, next steps, blockers…", key=f"u_comment_{idx}")
+
+            updated = st.form_submit_button("💾 Update", type="primary", width="stretch")
+
+            if updated:
+                st.session_state.df.loc[idx, "status"] = status
+                st.session_state.df.loc[idx, "stage"] = stage
+                st.session_state.df.loc[idx, "potential"] = potential
+                st.session_state.df.loc[idx, "priority"] = priority
+                st.session_state.df.loc[idx, "annual_demand_mt"] = float(annual_demand) if annual_demand else None
+                st.session_state.df.loc[idx, "comment"] = comment.strip()
+                st.session_state.df.loc[idx, "date"] = update_date.strftime("%Y-%m-%d")
+                st.session_state.df = _normalize(st.session_state.df)
+                save_data(st.session_state.df)
+                st.success(f"Updated “{_label(idx)}” (status set on {update_date.strftime('%Y-%m-%d')}).")
+
+        with st.expander("🗑️ Delete this agency"):
+            st.caption("This permanently removes the selected agency from the data.")
+            if st.button("Delete", type="secondary"):
+                st.session_state.df = _normalize(st.session_state.df.drop(index=idx))
+                save_data(st.session_state.df)
+                st.success("Agency deleted.")
+                st.rerun()
