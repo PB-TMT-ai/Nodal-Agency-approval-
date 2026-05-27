@@ -110,6 +110,13 @@ def fmt_mt(value) -> str:
     return f"{int(value):,} MT"
 
 
+def latest_remark(comment: str) -> str:
+    """Most recent entry in the remark log (each entry is stored on its own line)."""
+    if not comment or not str(comment).strip():
+        return ""
+    return str(comment).strip().split("\n")[0].strip()
+
+
 # --------------------------------------------------------------------------- #
 # State
 # --------------------------------------------------------------------------- #
@@ -213,6 +220,7 @@ with tab_dash:
     table["annual_demand_mt"] = table["annual_demand_mt"].apply(
         lambda v: "" if pd.isna(v) else f"{int(v):,}"
     )
+    table["latest_remark"] = table["comment"].apply(latest_remark)
     table = table.rename(columns={
         "agency": "Nodal Agency",
         "ministry_state": "Ministry / State",
@@ -225,11 +233,11 @@ with tab_dash:
         "jsw_support": "JSW Support",
         "approved_brands": "Approved Brands",
         "date": "Date",
-        "comment": "Comment",
+        "latest_remark": "Latest Remark",
     })
     display_cols = [
         "Nodal Agency", "Ministry / State", "Status", "Stage",
-        "Annual Demand (MT)", "Potential", "Priority", "Date", "Comment",
+        "Annual Demand (MT)", "Potential", "Priority", "Date", "Latest Remark",
     ]
     st.dataframe(table[display_cols], width="stretch", hide_index=True)
 
@@ -349,7 +357,7 @@ with tab_update:
                 update_date_str = update_date.strftime("%Y-%m-%d")
                 comment_log = row["comment"]
                 if new_remark.strip():
-                    entry = f"[{update_date_str}] {new_remark.strip()}"
+                    entry = f"[{update_date_str}] {' '.join(new_remark.split())}"
                     comment_log = f"{entry}\n{comment_log}".strip() if comment_log else entry
                     st.session_state.df.loc[idx, "comment"] = comment_log
                 st.session_state.df.loc[idx, "status"] = status
