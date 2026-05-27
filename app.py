@@ -316,6 +316,13 @@ with tab_update:
         def _opt_index(options, value):
             return options.index(value) if value in options else 0
 
+        st.markdown("**Earlier remarks**")
+        st.text_area(
+            "Earlier remarks",
+            value=row["comment"] if row["comment"] else "— No earlier remarks —",
+            height=140, disabled=True, label_visibility="collapsed", key=f"u_old_{idx}",
+        )
+
         with st.form("update_agency"):
             col_a, col_b = st.columns(2)
             with col_a:
@@ -332,22 +339,28 @@ with tab_update:
                 cur_demand = int(row["annual_demand_mt"]) if pd.notna(row["annual_demand_mt"]) else 0
                 annual_demand = st.number_input("Annual Demand (MT)", min_value=0, step=1000,
                                                 value=cur_demand, key=f"u_demand_{idx}")
-            comment = st.text_area("Comment / Remarks", value=row["comment"],
-                                   placeholder="Latest update, next steps, blockers…", key=f"u_comment_{idx}")
+            new_remark = st.text_area("Current update remark",
+                                      placeholder="What changed today? Next steps, blockers… (added on top of earlier remarks)",
+                                      key=f"u_remark_{idx}")
 
             updated = st.form_submit_button("💾 Update", type="primary", width="stretch")
 
             if updated:
+                update_date_str = update_date.strftime("%Y-%m-%d")
+                comment_log = row["comment"]
+                if new_remark.strip():
+                    entry = f"[{update_date_str}] {new_remark.strip()}"
+                    comment_log = f"{entry}\n{comment_log}".strip() if comment_log else entry
+                    st.session_state.df.loc[idx, "comment"] = comment_log
                 st.session_state.df.loc[idx, "status"] = status
                 st.session_state.df.loc[idx, "stage"] = stage
                 st.session_state.df.loc[idx, "potential"] = potential
                 st.session_state.df.loc[idx, "priority"] = priority
                 st.session_state.df.loc[idx, "annual_demand_mt"] = float(annual_demand) if annual_demand else None
-                st.session_state.df.loc[idx, "comment"] = comment.strip()
-                st.session_state.df.loc[idx, "date"] = update_date.strftime("%Y-%m-%d")
+                st.session_state.df.loc[idx, "date"] = update_date_str
                 st.session_state.df = _normalize(st.session_state.df)
                 save_data(st.session_state.df)
-                st.success(f"Updated “{_label(idx)}” (status set on {update_date.strftime('%Y-%m-%d')}).")
+                st.success(f"Updated “{_label(idx)}” on {update_date_str}.")
 
         with st.expander("🗑️ Delete this agency"):
             st.caption("This permanently removes the selected agency from the data.")
