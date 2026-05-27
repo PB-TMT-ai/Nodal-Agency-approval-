@@ -71,14 +71,9 @@ def _seed_from_excel() -> pd.DataFrame:
     return df
 
 
-def load_data() -> pd.DataFrame:
-    """Load from the CSV store, seeding from the Excel file on first run."""
-    if os.path.exists(DATA_FILE):
-        df = pd.read_csv(DATA_FILE)
-    else:
-        df = _seed_from_excel()
-        df.to_csv(DATA_FILE, index=False)
-
+def _normalize(df: pd.DataFrame) -> pd.DataFrame:
+    """Force a consistent schema/dtypes so filters and charts never see mixed types."""
+    df = df.copy()
     for col in COLUMNS:
         if col not in df.columns:
             df[col] = ""
@@ -87,11 +82,26 @@ def load_data() -> pd.DataFrame:
     for col in COLUMNS:
         if col != "annual_demand_mt":
             df[col] = df[col].fillna("").astype(str)
-    return df
+    return df.reset_index(drop=True)
+
+
+def load_data() -> pd.DataFrame:
+    """Load from the CSV store, seeding from the Excel file on first run."""
+    if os.path.exists(DATA_FILE):
+        df = pd.read_csv(DATA_FILE)
+    else:
+        df = _seed_from_excel()
+        df.to_csv(DATA_FILE, index=False)
+    return _normalize(df)
 
 
 def save_data(df: pd.DataFrame) -> None:
     df.to_csv(DATA_FILE, index=False)
+
+
+def filter_options(series) -> list:
+    """Unique, non-blank values as sorted strings (robust to NaN/mixed types)."""
+    return sorted({str(v).strip() for v in series.dropna() if str(v).strip()})
 
 
 def fmt_mt(value) -> str:
@@ -120,10 +130,10 @@ with tab_dash:
     # ---- Filters --------------------------------------------------------- #
     with st.sidebar:
         st.header("Filters")
-        f_status = st.multiselect("Status", sorted(x for x in df["status"].unique() if x))
-        f_ministry = st.multiselect("Ministry / State", sorted(x for x in df["ministry_state"].unique() if x))
-        f_potential = st.multiselect("Potential", sorted(x for x in df["potential"].unique() if x))
-        f_stage = st.multiselect("Stage", sorted(x for x in df["stage"].unique() if x))
+        f_status = st.multiselect("Status", filter_options(df["status"]))
+        f_ministry = st.multiselect("Ministry / State", filter_options(df["ministry_state"]))
+        f_potential = st.multiselect("Potential", filter_options(df["potential"]))
+        f_stage = st.multiselect("Stage", filter_options(df["stage"]))
 
     view = df.copy()
     if f_status:
@@ -266,8 +276,8 @@ with tab_add:
                     "date": entry_date.strftime("%Y-%m-%d"),
                     "comment": comment.strip(),
                 }
-                st.session_state.df = pd.concat(
-                    [st.session_state.df, pd.DataFrame([new_row])], ignore_index=True
+                st.session_state.df = _normalize(
+                    pd.concat([st.session_state.df, pd.DataFrame([new_row])], ignore_index=True)
                 )
                 save_data(st.session_state.df)
                 st.success(f"Saved “{agency.strip()}”.")
@@ -292,7 +302,7 @@ with tab_add:
     )
 
     if st.button("💾 Save changes", type="primary"):
-        st.session_state.df = edited.reset_index(drop=True)
+        st.session_state.df = _normalize(edited)
         save_data(st.session_state.df)
         st.success("Changes saved.")
         st.rerun()
