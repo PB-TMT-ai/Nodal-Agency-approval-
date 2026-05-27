@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+nodal_agency_data.csv
+.streamlit/secrets.toml
